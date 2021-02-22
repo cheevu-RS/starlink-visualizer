@@ -2,56 +2,52 @@ import React, { useEffect, useState } from "react";
 import { geoOrthographic, geoPath, geoGraticule } from "d3-geo";
 import { timer, select } from "d3";
 import { feature } from "topojson-client";
-import { getArrayOfTLEs } from "../helpers/updateLocations";
+import { getOrbitLocations } from "../helpers/updateLocations";
 import { useInterval } from "./UseInterval";
 
-  
 const WorldMap = () => {
     const [worldData, setWorldData] = useState([]);
-    const [currentLocation, setCurrentLocation] = useState([]);
     const [svg, setSvg] = useState([]);
     const [markerGroup, setMarkerGroup] = useState([]);
     const [orbitLocations, setOrbitLocations] = useState([]);
     const width = 960;
     const height = 500;
-    const trailLength = 5;
     const drawMarkers = () => {
         const projection = geoOrthographic();
-        const opacities = ["0.1","0.2","0.4","0.6","0.8"]
-        if (currentLocation.length > 0) {
-            for (let i = 0; i < trailLength; i++) {
-                const markers = markerGroup
-                    .selectAll(".trail"+i)
-                    .data(currentLocation[i]);
-                markers
-                    .enter()
-                    .append("circle")
-                    .merge(markers)
-                    .attr("class", "trail"+i)
-                    .attr("cx", (d) => projection([d.lng, d.lat])[0])
-                    .attr("cy", (d) => projection([d.lng, d.lat])[1])
-                    .attr("fill", "blue")
-                    .attr("r", 1)
-                    .attr("opacity",opacities[i]);
-                markerGroup.each(function () {
-                    this.parentNode.appendChild(this);
-                });
-            }
-        }
+        let i = 10;
+        const markers = markerGroup
+            .selectAll(".trail" + i)
+            .data(orbitLocations[0]);
+        markers
+            .enter()
+            .append("circle")
+            .merge(markers)
+            .attr("class", "trail" + i)
+            .attr("cx", (d) => projection([d.lng, d.lat])[0])
+            .attr("cy", (d) => projection([d.lng, d.lat])[1])
+            .attr("fill", "blue")
+            .attr("r", i / 10)
+            .attr("opacity", i / 10);
+        markerGroup.each(function () {
+            this.parentNode.appendChild(this);
+        });
+    };
+    const updateLocations = async () => {
+        let orbitLocations = await getOrbitLocations();
+        setOrbitLocations((prevstate) => [...prevstate, ...orbitLocations]);
     };
     useInterval(() => {
-        let curr = [];
-        for (let i = 0; i < trailLength; i++) {
-            curr.push([]);
-        }
-        for (let satellite in orbitLocations) {
-            for (let i = 0; i < trailLength; i++) {
-                curr[i].push(orbitLocations[satellite][i]);
-            }
-            orbitLocations[satellite].splice(0, trailLength);
-        }
-        setCurrentLocation(curr);
+        let t0 = Date.now();
         drawMarkers();
+        let t1 = Date.now();
+        setOrbitLocations((prevState) => {
+            prevState.splice(0, 1);
+            return prevState;
+        });
+        if (orbitLocations.length < 10) {
+            updateLocations();
+        }
+        console.log("interrval logic time " + (t1 - t0) / 1000 + " ms");
     }, 1000);
 
     useEffect(() => {
@@ -67,7 +63,7 @@ const WorldMap = () => {
                 .attr("width", width)
                 .attr("height", height);
             setSvg(svg);
-            setOrbitLocations(await getArrayOfTLEs());
+            setOrbitLocations(await getOrbitLocations());
             const markerGroup = svg.append("g");
             setMarkerGroup(markerGroup);
         };
@@ -121,8 +117,8 @@ const WorldMap = () => {
             }
         };
         if (svg.length !== 0) {
+            drawGraticule();
             drawGlobe();
-            // drawGraticule();
             enableRotation();
         }
     }, [svg, worldData]);

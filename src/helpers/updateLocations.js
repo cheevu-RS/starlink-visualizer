@@ -1,6 +1,6 @@
-import { getEpochTimestamp, getGroundTracks, getLatLngObj } from "tle.js";
+import { getLatLngObj } from "tle.js";
 
-export const getArrayOfTLEs = async () => {
+export const getOrbitLocations = async () => {
     let tleFile = await fetch(
         "https://celestrak.com/NORAD/elements/starlink.txt"
     );
@@ -17,22 +17,26 @@ export const getArrayOfTLEs = async () => {
     const starlinkRegex = new RegExp("STARLINK-[0-9]{1,4}", "g");
     tleArray = tleArray.filter((text) => text.match(starlinkRegex));
     // time after which it will render.
-    const xSecondsTime = 5;
-    const numberOfLocations = 360;
+    const xSecondsTime = 10;
+    const numberOfLocations = 60;
     let t0, t1, t2, t3;
     let orbitObjects = [];
 
     t2 = performance.now();
+    let i = 0;
+    while (i < numberOfLocations) {
+        orbitObjects.push([]);
+        i = i + 1;
+    }
     tleArray.forEach((tle) => {
         t0 = performance.now();
-        let name = tle.match(starlinkRegex);
-        let i = 0;
-        let arr = [];
+        i = 0;
         while (i < numberOfLocations) {
-            arr.push(getLatLngObj(tle, Date.now() + (xSecondsTime + i)*2000));
-            i=i+1
+            orbitObjects[i].push(
+                getLatLngObj(tle, Date.now() + (xSecondsTime + i) * 2000)
+            );
+            i = i + 1;
         }
-        orbitObjects[name[0]]=arr;
         t1 = performance.now();
     });
     t3 = performance.now();
