@@ -1,4 +1,4 @@
-import { getLatLngObj } from "tle.js";
+import { getLatLngObj, getGroundTracks } from "tle.js";
 const constants = {
     xSecondsTime: 1, // time after which the data is rendered (time for running this script)
     numberOfLocations: 60, // number of locations fetched per starlink
@@ -40,13 +40,15 @@ export const getOrbitLocationsByTime = async () => {
     tleArray.forEach((tle) => {
         t0 = performance.now();
         i = 0;
+        let name = tle.match(constants.starlinkRegex)[0];
         while (i < constants.numberOfLocations) {
-            orbitObjects[i].push(
-                getLatLngObj(
+            orbitObjects[i].push({
+                ...getLatLngObj(
                     tle,
                     Date.now() + (constants.xSecondsTime + i) * 1000
-                )
-            );
+                ),
+                name: name,
+            });
             i = i + 1;
         }
         t1 = performance.now();
@@ -91,4 +93,32 @@ export const getOrbitLocationsBySat = async () => {
     console.log("for inner loop" + (t1 - t0) / 1000 + "seconds");
     console.log("for oouter loop" + (t3 - t2) / 1000 + "seconds");
     return orbitObjects;
+};
+export const getOrbitForSatellite = async (name) => {
+    let t0 = performance.now();
+    let tleArray = await getTleArray();
+    // console.log("h1");
+    let targetTle;
+    tleArray.every((tle) => {
+        if (tle.match(name)) {
+            targetTle = tle;
+            return false;
+        }
+        return true;
+    });
+    let tracks = await getGroundTracks({
+        tle: targetTle,
+        isLngLatFormat: true,
+    });
+    tracks = tracks[1];
+    let i = tracks.length;
+    // remove every 2nd element in array
+    while (i--) {
+        (i + 1) % 2 === 0 && tracks.splice(i, 1);
+        (i + 1) % 3 === 0 && tracks.splice(i, 1);
+    }
+    // console.log(tracks);
+    let t1 = performance.now();
+    console.log("for get tracks " + (t1 - t0) / 1000 + "seconds");
+    return tracks;
 };

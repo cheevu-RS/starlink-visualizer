@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { geoOrthographic, geoPath, geoGraticule, geoDistance } from "d3-geo";
 import { timer, select, drag, zoom } from "d3";
 import { feature } from "topojson-client";
-import { getOrbitLocationsByTime } from "../helpers/updateLocations";
+import {
+    getOrbitLocationsByTime,
+    getOrbitForSatellite,
+} from "../helpers/tleHelper";
 import { useInterval } from "./UseInterval";
 
 const WorldMap = () => {
@@ -12,9 +15,17 @@ const WorldMap = () => {
     const [orbitLocations, setOrbitLocations] = useState([]);
     const [projection, setProjection] = useState(() => void undefined);
     const [radius, setRadius] = useState([]);
+    const [toolTipDiv, setToolTipDiv] = useState([]);
+    const [displayOrbit, setDisplayOrbit] = useState(false);
+    const [orbitForSatellite, setOrbitForSatellite] = useState([]);
+    const [fetchedOrbit, setFetchedOrbit] = useState(false);
+    const [orbitTracks, setOrbitTracks] = useState([]);
     const width = Math.max((window.innerWidth * 3) / 4, 960);
     const height = Math.max((window.innerHeight * 8) / 10, 500);
-    const drawMarkers = () => {
+    const removeOrbit = useCallback(() => {
+        svg.selectAll(".tracks").remove();
+    }, [svg]);
+    const drawMarkers = useCallback(() => {
         const center = [width / 2, height / 2];
         if (Object.keys(markerGroup).length !== 0) {
             for (let i = 1; i <= 10; i++) {
@@ -37,13 +48,91 @@ const WorldMap = () => {
                         return gdistance > 1.57 ? "none" : "steelblue";
                     })
                     .attr("r", (radius * i) / 10)
-                    .attr("opacity", i / 10);
+                    .attr("opacity", i / 10)
+                    .on("mouseover", (event, d) => {
+                        toolTipDiv
+                            .transition()
+                            .duration(200)
+                            .style("opacity", 0.9);
+                        toolTipDiv
+                            .html(d.name)
+                            .style("left", event.pageX + "px")
+                            .style("top", event.pageY - 28 + "px");
+                    })
+                    .on("mouseout", () => {
+                        toolTipDiv
+                            .transition()
+                            .duration(500)
+                            .style("opacity", 0);
+                    })
+                    .on(
+                        "click",
+                        (e, d) => {
+                            console.log(d.name, orbitForSatellite);
+                            if (d.name === orbitForSatellite) {
+                                setDisplayOrbit(false);
+                                removeOrbit();
+                            } else {
+                                setDisplayOrbit(true);
+                                setOrbitForSatellite(d.name);
+                                setFetchedOrbit(false);
+                            }
+                        }
+                        // { passive: true }
+                    );
                 markerGroup.each(function () {
                     this.parentNode.appendChild(this);
                 });
             }
         }
+    }, [
+        orbitForSatellite,
+        removeOrbit,
+        projection,
+        markerGroup,
+        orbitLocations,
+        radius,
+        toolTipDiv,
+        height,
+        width,
+    ]);
+
+    const drawOrbit = useCallback(() => {
+        if (displayOrbit && orbitTracks.length > 0) {
+            const center = [width / 2, height / 2];
+            const markers = markerGroup.selectAll(".tracks").data(orbitTracks);
+            markers
+                .enter()
+                .append("circle")
+                .merge(markers)
+                .attr("class", "tracks")
+                // getGroundTracks returns [lng, lat]
+                .attr("cx", (d) => projection(d)[0])
+                .attr("cy", (d) => projection(d)[1])
+                .attr("fill", (d) => {
+                    let gdistance = geoDistance(d, projection.invert(center));
+                    return gdistance > 1.57 ? "none" : "black";
+                })
+                .attr("r", radius / 2)
+                .attr("opacity", 1);
+        }
+    }, [
+        displayOrbit,
+        orbitTracks,
+        projection,
+        markerGroup,
+        radius,
+        height,
+        width,
+    ]);
+    const getOrbit = async () => {
+        let tracks = await getOrbitForSatellite(orbitForSatellite);
+        setOrbitTracks(tracks);
+        setFetchedOrbit(true);
     };
+    useEffect(() => {
+        drawOrbit();
+    }, [orbitTracks, drawOrbit]);
     const updateLocations = async () => {
         let orbitLocations = await getOrbitLocationsByTime();
         setOrbitLocations((prevstate) => [...prevstate, ...orbitLocations]);
@@ -56,6 +145,9 @@ const WorldMap = () => {
         });
         if (orbitLocations.length < 15) {
             updateLocations();
+        }
+        if (displayOrbit && !fetchedOrbit) {
+            getOrbit();
         }
     }, 1000);
 
@@ -77,6 +169,11 @@ const WorldMap = () => {
             const markerGroup = svg.append("g");
             setMarkerGroup(markerGroup);
             setRadius(1);
+            const toolTipDiv = select("body")
+                .append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0);
+            setToolTipDiv(toolTipDiv);
         };
         initialise();
     }, []);
@@ -135,7 +232,7 @@ const WorldMap = () => {
     }, [svg, worldData, projection]);
     useEffect(() => {
         const dragAndZoom = () => {
-            const sensitivity = 100;
+            const sensitivity = 75;
             svg.call(
                 drag().on(
                     "drag",
@@ -151,6 +248,7 @@ const WorldMap = () => {
                         const path = geoPath().projection(projection);
                         svg.selectAll("path").attr("d", path);
                         drawMarkers();
+                        drawOrbit();
                     },
                     { passive: true }
                 )
@@ -164,18 +262,18 @@ const WorldMap = () => {
                                 initialScale * event.transform.k
                             );
                         });
-                        console.log(event.transform.k);
                         setRadius(event.transform.k);
                         const path = geoPath().projection(projection);
                         svg.selectAll("path").attr("d", path);
                         drawMarkers();
+                        drawOrbit();
                     })
             );
         };
         if (svg.length !== 0) {
             dragAndZoom();
         }
-    }, [svg, projection]);
+    }, [svg, projection, drawMarkers, drawOrbit]);
 
     return (
         <div
