@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { geoOrthographic, geoPath, geoGraticule, geoDistance } from "d3-geo";
-import { timer, select, drag } from "d3";
+import { timer, select, drag, zoom } from "d3";
 import { feature } from "topojson-client";
 import { getOrbitLocationsByTime } from "../helpers/updateLocations";
 import { useInterval } from "./UseInterval";
@@ -11,8 +11,9 @@ const WorldMap = () => {
     const [markerGroup, setMarkerGroup] = useState({});
     const [orbitLocations, setOrbitLocations] = useState([]);
     const [projection, setProjection] = useState(() => void undefined);
-    const width = 960;
-    const height = 500;
+    const [radius, setRadius] = useState([]);
+    const width = Math.max((window.innerWidth * 3) / 4, 960);
+    const height = Math.max((window.innerHeight * 8) / 10, 500);
     const drawMarkers = () => {
         const center = [width / 2, height / 2];
         if (Object.keys(markerGroup).length !== 0) {
@@ -35,7 +36,7 @@ const WorldMap = () => {
                         );
                         return gdistance > 1.57 ? "none" : "steelblue";
                     })
-                    .attr("r", i / 10)
+                    .attr("r", (radius * i) / 10)
                     .attr("opacity", i / 10);
                 markerGroup.each(function () {
                     this.parentNode.appendChild(this);
@@ -75,6 +76,7 @@ const WorldMap = () => {
             updateLocations();
             const markerGroup = svg.append("g");
             setMarkerGroup(markerGroup);
+            setRadius(1);
         };
         initialise();
     }, []);
@@ -152,6 +154,22 @@ const WorldMap = () => {
                     },
                     { passive: true }
                 )
+            ).call(
+                zoom()
+                    .scaleExtent([0.5, 10])
+                    .on("zoom", (event) => {
+                        const initialScale = geoOrthographic().scale();
+                        setProjection((prevState) => {
+                            return prevState.scale(
+                                initialScale * event.transform.k
+                            );
+                        });
+                        console.log(event.transform.k);
+                        setRadius(event.transform.k);
+                        const path = geoPath().projection(projection);
+                        svg.selectAll("path").attr("d", path);
+                        drawMarkers();
+                    })
             );
         };
         if (svg.length !== 0) {
@@ -160,9 +178,16 @@ const WorldMap = () => {
     }, [svg, projection]);
 
     return (
-        <>
-            <svg />
-        </>
+        <div
+            style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+            }}
+        >
+            <svg preserveAspectRatio="xMaxYMax meet" />
+        </div>
     );
 };
 
