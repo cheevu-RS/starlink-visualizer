@@ -22,34 +22,37 @@ const WorldMap = () => {
     const [orbitTracks, setOrbitTracks] = useState([]);
     const width = Math.max((window.innerWidth * 3) / 4, 960);
     const height = Math.max((window.innerHeight * 8) / 10, 500);
+
     const removeOrbit = useCallback(() => {
         svg.selectAll(".tracks").remove();
     }, [svg]);
+
     const drawMarkers = useCallback(() => {
         const center = [width / 2, height / 2];
         if (Object.keys(markerGroup).length !== 0) {
-            for (let i = 1; i <= 10; i++) {
-                const markers = markerGroup
-                    .selectAll(".trail" + i)
-                    .data(orbitLocations[i - 1]);
-                markers
-                    .enter()
-                    .append("circle")
-                    .merge(markers)
-                    .attr("class", "trail" + i)
-                    .attr("cx", (d) => projection([d.lng, d.lat])[0])
-                    .attr("cy", (d) => projection([d.lng, d.lat])[1])
-                    .attr("fill", (d) => {
-                        const coordinate = [d.lng, d.lat];
-                        let gdistance = geoDistance(
-                            coordinate,
-                            projection.invert(center)
-                        );
-                        return gdistance > 1.57 ? "none" : "steelblue";
-                    })
-                    .attr("r", (radius * i) / 10)
-                    .attr("opacity", i / 10)
-                    .on("mouseover", (event, d) => {
+            const markers = markerGroup
+                .selectAll(".starlink")
+                .data(orbitLocations[0]);
+            markers
+                .enter()
+                .append("circle")
+                .merge(markers)
+                .attr("class", "starlink")
+                .attr("cx", (d) => projection([d.lng, d.lat])[0])
+                .attr("cy", (d) => projection([d.lng, d.lat])[1])
+                .attr("fill", (d) => {
+                    const coordinate = [d.lng, d.lat];
+                    let gdistance = geoDistance(
+                        coordinate,
+                        projection.invert(center)
+                    );
+                    return gdistance > 1.57 ? "none" : "steelblue";
+                })
+                .attr("r", radius)
+                .attr("opacity", 1)
+                .on(
+                    "mouseover",
+                    (event, d) => {
                         toolTipDiv
                             .transition()
                             .duration(200)
@@ -58,32 +61,36 @@ const WorldMap = () => {
                             .html(d.name)
                             .style("left", event.pageX + "px")
                             .style("top", event.pageY - 28 + "px");
-                    })
-                    .on("mouseout", () => {
+                    },
+                    { passive: true }
+                )
+                .on(
+                    "mouseout",
+                    () => {
                         toolTipDiv
                             .transition()
                             .duration(500)
                             .style("opacity", 0);
-                    })
-                    .on(
-                        "click",
-                        (e, d) => {
-                            console.log(d.name, orbitForSatellite);
-                            if (d.name === orbitForSatellite) {
-                                setDisplayOrbit(false);
-                                removeOrbit();
-                            } else {
-                                setDisplayOrbit(true);
-                                setOrbitForSatellite(d.name);
-                                setFetchedOrbit(false);
-                            }
+                    },
+                    { passive: true }
+                )
+                .on(
+                    "click",
+                    (e, d) => {
+                        if (d.name === orbitForSatellite) {
+                            setDisplayOrbit(false);
+                            removeOrbit();
+                        } else {
+                            setDisplayOrbit(true);
+                            setOrbitForSatellite(d.name);
+                            setFetchedOrbit(false);
                         }
-                        // { passive: true }
-                    );
-                markerGroup.each(function () {
-                    this.parentNode.appendChild(this);
-                });
-            }
+                    },
+                    { passive: true }
+                );
+            markerGroup.each(function () {
+                this.parentNode.appendChild(this);
+            });
         }
     }, [
         orbitForSatellite,
@@ -99,6 +106,7 @@ const WorldMap = () => {
 
     const drawOrbit = useCallback(() => {
         if (displayOrbit && orbitTracks.length > 0) {
+            removeOrbit();
             const center = [width / 2, height / 2];
             const markers = markerGroup.selectAll(".tracks").data(orbitTracks);
             markers
@@ -117,6 +125,7 @@ const WorldMap = () => {
                 .attr("opacity", 1);
         }
     }, [
+        removeOrbit,
         displayOrbit,
         orbitTracks,
         projection,
@@ -125,18 +134,18 @@ const WorldMap = () => {
         height,
         width,
     ]);
+
     const getOrbit = async () => {
         let tracks = await getOrbitForSatellite(orbitForSatellite);
         setOrbitTracks(tracks);
         setFetchedOrbit(true);
     };
-    useEffect(() => {
-        drawOrbit();
-    }, [orbitTracks, drawOrbit]);
+
     const updateLocations = async () => {
         let orbitLocations = await getOrbitLocationsByTime();
         setOrbitLocations((prevstate) => [...prevstate, ...orbitLocations]);
     };
+
     useInterval(() => {
         drawMarkers();
         setOrbitLocations((prevState) => {
@@ -177,6 +186,10 @@ const WorldMap = () => {
         };
         initialise();
     }, []);
+
+    useEffect(() => {
+        drawOrbit();
+    }, [orbitTracks, drawOrbit]);
 
     useEffect(() => {
         const path = geoPath().projection(projection);
@@ -230,6 +243,7 @@ const WorldMap = () => {
             // enableRotation();
         }
     }, [svg, worldData, projection]);
+
     useEffect(() => {
         const dragAndZoom = () => {
             const sensitivity = 75;
@@ -255,19 +269,23 @@ const WorldMap = () => {
             ).call(
                 zoom()
                     .scaleExtent([0.5, 10])
-                    .on("zoom", (event) => {
-                        const initialScale = geoOrthographic().scale();
-                        setProjection((prevState) => {
-                            return prevState.scale(
-                                initialScale * event.transform.k
-                            );
-                        });
-                        setRadius(event.transform.k);
-                        const path = geoPath().projection(projection);
-                        svg.selectAll("path").attr("d", path);
-                        drawMarkers();
-                        drawOrbit();
-                    })
+                    .on(
+                        "zoom",
+                        (event) => {
+                            const initialScale = geoOrthographic().scale();
+                            setProjection((prevState) => {
+                                return prevState.scale(
+                                    initialScale * event.transform.k
+                                );
+                            });
+                            setRadius(event.transform.k);
+                            const path = geoPath().projection(projection);
+                            svg.selectAll("path").attr("d", path);
+                            drawMarkers();
+                            drawOrbit();
+                        },
+                        { passive: true }
+                    )
             );
         };
         if (svg.length !== 0) {
